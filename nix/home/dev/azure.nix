@@ -6,7 +6,8 @@ in {
     [
       pkgs.kubelogin
     ]
-    ++ (lib.optional isLinux pkgs.azure-cli);
+    # ++ (lib.optional isLinux pkgs.azure-cli)
+  ;
 
   # otherwise it uses ~/.azure
   home.sessionVariables."AZURE_CONFIG_DIR" = "${config.xdg.configHome}/azure";

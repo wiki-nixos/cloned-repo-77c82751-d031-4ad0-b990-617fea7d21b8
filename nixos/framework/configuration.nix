@@ -1,4 +1,4 @@
-{ inputs, self, config , pkgs , lib , nix-colors, ...  }:
+{ inputs, self, config, pkgs, lib, nix-colors, ... }:
 
 with lib;
 

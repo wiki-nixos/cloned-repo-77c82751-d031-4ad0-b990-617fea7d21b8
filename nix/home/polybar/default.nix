@@ -109,6 +109,7 @@ let
     submodule {
       options = {
         height = mkOption { type = int; };
+        separators = mkOption { type = attrsOf str; };
         modules = mkOption { type = modulesType; };
         settings = mkOption {
           type = attrs;
@@ -116,7 +117,8 @@ let
         };
       };
     };
-in {
+in
+{
   options.modules.polybar = {
     monitor = mkOption {
       type = types.str;
@@ -129,18 +131,30 @@ in {
       type = types.package;
       default = pkgs.polybarFull;
     };
+    battery = mkOption {
+      type = types.nullOr (types.submodule {
+        options = {
+          enable = mkEnableOption "battery";
+          battery = mkOption { type = types.str; };
+          adapter = mkOption { type = types.str; };
+        };
+      });
+      default = null;
+    };
     bars = mkOption {
       type = types.attrsOf barType;
       default = {
         "top" = {
           height = 40;
+          separators.left = "nerdfonts_ple_pixelated_squares_small";
+          separators.right = "nerdfonts_ple_backslash_separator";
           modules = {
-            left = withSeparator "nerdfonts_ple_pixelated_squares_small" [
+            left = [
               (optionalString config.xsession.windowManager.i3.enable "i3")
               "xwindow"
             ];
             center = [ "time" "date" ];
-            right = withSeparator "nerdfonts_ple_backslash_separator" [
+            right = [
               "gh"
               # "kubernetes"
               (optionalString config.services.dunst.enable "dunst")
@@ -150,10 +164,10 @@ in {
               "gpu"
               "cpu"
               "temperature"
-              (forEach cfg.networks
-                ({ interface, ... }: "network-${interface}"))
-              "powermenu"
-            ];
+            ] ++ (forEach cfg.networks ({ interface, ... }:
+              "network-${interface}"))
+            ++ optional (cfg.battery.enable) "battery"
+            ++ [ "powermenu" ];
           };
         };
       };
@@ -219,9 +233,9 @@ in {
           "inherit" = "bar/base";
           monitor.text = "\${env:MONITOR:${cfg.monitor}}"; # set by script
           monitor.strict = false;
-          modules.left = concatStringsSep " " cfg.bars.top.modules.left;
+          modules.left = concatStringsSep " " (withSeparator cfg.bars.top.separators.left cfg.bars.top.modules.left);
           modules.center = concatStringsSep " " cfg.bars.top.modules.center;
-          modules.right = concatStringsSep " " cfg.bars.top.modules.right;
+          modules.right = concatStringsSep " " (withSeparator cfg.bars.top.separators.right cfg.bars.top.modules.right);
           bottom = false;
           width = "100%";
           height = cfg.bars.top.height;
@@ -239,6 +253,118 @@ in {
           tray.margin.left = 3;
           cursor.click = "pointer"; # hand
           cursor.scroll = "ns-resize"; # arrows
+        })
+        (nvs "module/battery" {
+          "inherit" = "module/base";
+          type = "internal/battery";
+          battery = cfg.battery.battery;
+          adapter = cfg.battery.adapter;
+
+          # see "man date" for details on how to format the time string
+          # NOTE: if you want to use syntax tags here you need to use %%{...}
+          # Default: %H:%M:%S
+          time.format = "%H:%M";
+
+          # Available tags:
+          #   <label-charging> (default)
+          #   <bar-capacity>
+          #   <ramp-capacity>
+          #   <animation-charging>
+          format.charging.text = "<ramp-capacity> <label-charging>";
+          format.charging.background = "\${colors.background}";
+          format.charging.foreground = "\${colors.foreground}";
+          format.charging.padding = 2;
+
+          # Available tags:
+          #   <label-discharging> (default)
+          #   <bar-capacity>
+          #   <ramp-capacity>
+          #   <animation-discharging>
+          format.discharging.text = "<ramp-capacity> <label-discharging>";
+          format.discharging.background = "\${colors.background}";
+          format.discharging.foreground = "\${colors.foreground}";
+          format.discharging.padding = 2;
+
+          # Available tags:
+          #   <label-full> (default)
+          #   <bar-capacity>
+          #   <ramp-capacity>
+          format.full.text = "<ramp-capacity> <label-high>";
+          format.full.background = "\${colors.background}";
+          format.full.foreground = "\${colors.foreground}";
+          format.full.padding = 2;
+
+          # Format used when battery level drops to low-at
+          # If not defined, format-discharging is used instead.
+          # Available tags:
+          #   <label-low>
+          #   <animation-low>
+          #   <bar-capacity>
+          #   <ramp-capacity>
+          # New in version 3.6.0
+          format.low.text = "<ramp-capacity> <label-low>";
+          format.low.background = "\${colors.background}";
+          format.low.foreground = "\${colors.foreground}";
+          format.low.padding = 2;
+
+          # Available tokens:
+          #   %percentage% (default) - is set to 100 if full-at is reached
+          #   %percentage_raw%
+          #   %time%
+          #   %consumption% (shows current charge rate in watts)
+          label.charging.text = "%percentage%% (%time%)";
+
+          # Available tokens:
+          #   %percentage% (default) - is set to 100 if full-at is reached
+          #   %percentage_raw%
+          #   %time%
+          #   %consumption% (shows current discharge rate in watts)
+          label.discharging.text = "%percentage%% (%time%)";
+
+          # Available tokens:
+          #   %percentage% (default) - is set to 100 if full-at is reached
+          #   %percentage_raw%
+          label.full.text = "";
+
+          # Available tokens:
+          #   %percentage% (default) - is set to 100 if full-at is reached
+          #   %percentage_raw%
+          #   %time%
+          #   %consumption% (shows current discharge rate in watts)
+          # New in version 3.6.0
+          label.low.text = "%percentage%%";
+
+          # Only applies if <ramp-capacity> is used
+          ramp.capacity."0".text = "";
+          ramp.capacity."1".text = "";
+          ramp.capacity."2".text = "";
+          ramp.capacity."3".text = "";
+          ramp.capacity."4".text = "";
+
+          # Only applies if <bar-capacity> is used
+          bar.capacity.width = 10;
+
+          # Only applies if <animation-charging> is used
+          animation.charging."0".text = "";
+          animation.charging."1".text = "";
+          animation.charging."2".text = "";
+          animation.charging."3".text = "";
+          animation.charging."4".text = "";
+          animation.charging.framerate = 750; # millis
+
+          # Only applies if <animation-discharging> is used
+          animation.discharging."0".text = "";
+          animation.discharging."1".text = "";
+          animation.discharging."2".text = "";
+          animation.discharging."3".text = "";
+          animation.discharging."4".text = "";
+          animation.discharging.framerate = 500; # millis
+
+          # Only applies if <animation-low> is used
+          # New in version 3.6.0
+          animation.low."0".text = "!";
+          animation.low."1".text = "";
+          animation.low.framerate = 200;
         })
         ####################################################
         (nvs "module/base" {
@@ -407,63 +533,65 @@ in {
               iconText nerdfonts.oct.mark_github
             } %output%";
           format.text = "<label>";
-          exec = let
-            alertStyle = mkStyle [
-              (tag.bg colors.base0E)
-              (tag.fg colors.base00)
-              (tag.font 2)
-            ];
-          in pkgs.writeShellScript "github" ''
-            export PATH=${
-              makeBinPath [
-                config.programs.gh.package
-                config.programs.jq.package
-                config.programs.rofi.finalPackage
-                pkgs.xdg-utils
-                pkgs.moreutils
-              ]
-            }:$PATH
+          exec =
+            let
+              alertStyle = mkStyle [
+                (tag.bg colors.base0E)
+                (tag.fg colors.base00)
+                (tag.font 2)
+              ];
+            in
+            pkgs.writeShellScript "github" ''
+              export PATH=${
+                makeBinPath [
+                  config.programs.gh.package
+                  config.programs.jq.package
+                  config.programs.rofi.finalPackage
+                  pkgs.xdg-utils
+                  pkgs.moreutils
+                ]
+              }:$PATH
 
-            get_pr_awaiting_review() {
-              gh api \
-                -X GET search/issues \
-                -f q='type:pr state:open draft:false user-review-requested:@me -reviewed-by:@me -org:optimizely'
-            }
+              get_pr_awaiting_review() {
+                gh api \
+                  -X GET search/issues \
+                  -f q='type:pr state:open draft:false user-review-requested:@me -reviewed-by:@me -org:optimizely'
+              }
 
-            display_prs() {
-              local data=$(get_pr_awaiting_review)
-              local count=$(jq -r .total_count <<<"$data")
+              display_prs() {
+                local data=$(get_pr_awaiting_review)
+                local count=$(jq -r .total_count <<<"$data")
 
-               case $count in
-                  0)
+                 case $count in
+                    0)
+                      echo -e "${
+                        tag.action 1
+                        "xdg-open https://github.com/pulls/review-requested"
+                        (iconStyle " ${nerdfonts.oct.git_pull_request} $count ")
+                      }"
+                        ;;
+                    *)
                     echo -e "${
                       tag.action 1
                       "xdg-open https://github.com/pulls/review-requested"
-                      (iconStyle " ${nerdfonts.oct.git_pull_request} $count ")
+                      (alertStyle " ${nerdfonts.oct.git_pull_request} $count ")
                     }"
-                      ;;
-                  *)
-                  echo -e "${
-                    tag.action 1
-                    "xdg-open https://github.com/pulls/review-requested"
-                    (alertStyle " ${nerdfonts.oct.git_pull_request} $count ")
-                  }"
-                  ;;
-               esac
+                    ;;
+                 esac
 
-              # case $count in
-                 # 0) ;;
-                 # *) echo -en "%{A:xdg-open "$(jq -r '.items[0].html_url | @uri' <<<"$data")":} $(pr_icon) 1 %{A}" ;;
-                 # *) echo -en "%{A:jq -r '.items[].html_url | @uri' <<<"$data" | rofi -dmenu | ifne xargs xdg-open } $(pr_icon) $count %{A}" ;;
-              # esac
-            }
+                # case $count in
+                   # 0) ;;
+                   # *) echo -en "%{A:xdg-open "$(jq -r '.items[0].html_url | @uri' <<<"$data")":} $(pr_icon) 1 %{A}" ;;
+                   # *) echo -en "%{A:jq -r '.items[].html_url | @uri' <<<"$data" | rofi -dmenu | ifne xargs xdg-open } $(pr_icon) $count %{A}" ;;
+                # esac
+              }
 
-            display_full() {
-              display_prs
-            }
+              display_full() {
+                display_prs
+              }
 
-            display_full
-          '';
+              display_full
+            '';
         })
         ####################################################
         (nvs "module/memory" {
@@ -649,51 +777,57 @@ in {
           };
         })
         ####################################################
-        (let
-          kubebar = pkgs.writeShellApplication {
-            name = "kubebar";
-            runtimeInputs = with pkgs; [ kubectl entr jq envsubst ];
-            text = builtins.readFile ./kubebar.bash;
-          };
-        in nvs "module/kubernetes" {
-          type = "custom/script";
-          exec-if = "kubectl version --client=true";
-          # tail = true;
-          # exec = "${kubebar}/bin/kubebar --watch";
-          exec = "${kubebar}/bin/kubebar --no-watch";
-          env = {
-            KUBEBAR_ESCAPE = "@";
-            KUBEBAR_FORMAT = concatStrings [
-              "%{A1:kitty-floating k9s &:}"
-              "%{F#${config.colorScheme.colors.base04}}${
+        (
+          let
+            kubebar = pkgs.writeShellApplication {
+              name = "kubebar";
+              runtimeInputs = with pkgs; [ kubectl entr jq envsubst ];
+              text = builtins.readFile ./kubebar.bash;
+            };
+          in
+          nvs "module/kubernetes" {
+            type = "custom/script";
+            exec-if = "kubectl version --client=true";
+            # tail = true;
+            # exec = "${kubebar}/bin/kubebar --watch";
+            exec = "${kubebar}/bin/kubebar --no-watch";
+            env = {
+              KUBEBAR_ESCAPE = "@";
+              KUBEBAR_FORMAT = concatStrings [
+                "%{A1:kitty-floating k9s &:}"
+                "%{F#${config.colorScheme.colors.base04}}${
                 iconText nerdfonts.md.kubernetes
               }%{F-} "
-              "@{KUBE_CURRENT_CONTEXT}/@{KUBE_CURRENT_NAMESPACE}"
-              "%{A}"
-            ];
-          };
-          tail = false;
-          interval = 10;
-          background = "\${colors.background}";
-          foreground = "\${colors.foreground}";
-          format.background = "\${colors.background}";
-          format.foreground = "\${colors.foreground}";
-          format.prefix-foreground = "\${colors.foreground-dim}";
-          format.suffix-foreground = "\${colors.foreground-dim}";
-          format.prefix-padding = 1;
-          format.padding = 2;
-        })
+                "@{KUBE_CURRENT_CONTEXT}/@{KUBE_CURRENT_NAMESPACE}"
+                "%{A}"
+              ];
+            };
+            tail = false;
+            interval = 10;
+            background = "\${colors.background}";
+            foreground = "\${colors.foreground}";
+            format.background = "\${colors.background}";
+            format.foreground = "\${colors.foreground}";
+            format.prefix-foreground = "\${colors.foreground-dim}";
+            format.suffix-foreground = "\${colors.foreground-dim}";
+            format.prefix-padding = 1;
+            format.padding = 2;
+          }
+        )
         ####################################################
-        (let
-          toggleScript = pkgs.writeShellScript "deadd-toggle" ''
-            kill -s USR1 $(pidof deadd-notification-center)
-          '';
-        in nvs "module/deadd" {
-          type = "custom/text";
-          content.text = tag.action 1 "${toggleScript}" (iconStyle " ${nerdfonts.oct.bell} ");
-          content.foreground = "\${colors.foreground}";
-          content.background = "\${colors.background}";
-        })
+        (
+          let
+            toggleScript = pkgs.writeShellScript "deadd-toggle" ''
+              kill -s USR1 $(pidof deadd-notification-center)
+            '';
+          in
+          nvs "module/deadd" {
+            type = "custom/text";
+            content.text = tag.action 1 "${toggleScript}" (iconStyle " ${nerdfonts.oct.bell} ");
+            content.foreground = "\${colors.foreground}";
+            content.background = "\${colors.background}";
+          }
+        )
         ####################################################
         (nvs "module/powermenu" {
           type = "custom/menu";
@@ -728,85 +862,95 @@ in {
           content.font = 5; # T5
           content.offset = (-5);
         })
-        (mapAttrs' (name: text:
-          (nameValuePair "module/nerdfonts_ple_${name}" {
-            type = "custom/text";
-            "inherit" = "module/nerdfonts_ple";
-            content.text = text;
-          })) nerdfonts.ple)
-        (mapAttrs' (name: text:
-          (nameValuePair "module/nerdfonts_ple_${name}-alt" {
-            type = "custom/text";
-            "inherit" = "module/nerdfonts_ple-alt";
-            content.text = text;
-          })) nerdfonts.ple)
+        (mapAttrs'
+          (name: text:
+            (nameValuePair "module/nerdfonts_ple_${name}" {
+              type = "custom/text";
+              "inherit" = "module/nerdfonts_ple";
+              content.text = text;
+            }))
+          nerdfonts.ple)
+        (mapAttrs'
+          (name: text:
+            (nameValuePair "module/nerdfonts_ple_${name}-alt" {
+              type = "custom/text";
+              "inherit" = "module/nerdfonts_ple-alt";
+              content.text = text;
+            }))
+          nerdfonts.ple)
         cfg.settings
       ];
 
       #####################################################
       # TODO finish converting to services.polybar.settings
-      config = let
-        mkModule = name: type: settings: {
-          "module/${name}" = {
-            inherit type;
-            background = "\${colors.background}";
-            foreground = "\${colors.foreground}";
-            format-background = "\${colors.background}";
-            format-foreground = "\${colors.foreground}";
-            format-prefix-foreground = "\${colors.foreground-dim}";
-            format-suffix-foreground = "\${colors.foreground-dim}";
-            format-prefix-padding = 1;
-            format-padding = 2;
-          } // settings;
-        };
-      in fold recursiveUpdate { } (forEach cfg.networks
-        ({ interface, interface-type, ... }@settings:
-          (mkModule "network-${interface}" "internal/network" ({
-            inherit interface;
+      config =
+        let
+          mkModule = name: type: settings: {
+            "module/${name}" = {
+              inherit type;
+              background = "\${colors.background}";
+              foreground = "\${colors.foreground}";
+              format-background = "\${colors.background}";
+              format-foreground = "\${colors.foreground}";
+              format-prefix-foreground = "\${colors.foreground-dim}";
+              format-suffix-foreground = "\${colors.foreground-dim}";
+              format-prefix-padding = 1;
+              format-padding = 2;
+            } // settings;
+          };
+        in
+        fold recursiveUpdate { } (forEach cfg.networks
+          ({ interface, interface-type, ... }@settings:
+            (mkModule "network-${interface}" "internal/network" ({
+              inherit interface;
 
-            format-connected = if interface-type == "wireless" then
-              "<ramp-signal>"
-            else
-              "<label-connected>";
-            format-connected-padding = 2;
-            format-connected-background = "\${colors.background}";
-            format-connected-foreground = "\${colors.foreground-dim}";
-            label-connected = "%{A1:nm-connection-editor &:}${
+              format-connected =
+                if interface-type == "wireless" then
+                  "<ramp-signal>"
+                else
+                  "<label-connected>";
+              format-connected-padding = 2;
+              format-connected-background = "\${colors.background}";
+              format-connected-foreground = "\${colors.foreground-dim}";
+              label-connected = "%{A1:nm-connection-editor &:}${
                 iconText nerdfonts.md.network_outline
               }%{A}";
 
-            format-disconnected = "<label-disconnected>";
-            format-disconnected-padding = 2;
-            format-disconnected-background = "\${colors.background}";
-            format-disconnected-foreground = "\${colors.foreground-dim}";
-            label-disconnected = if interface-type == "wireless" then
-              (iconText nerdfonts.md.wifi_off)
-            else
-              (iconText nerdfonts.md.network_off);
+              format-disconnected = "<label-disconnected>";
+              format-disconnected-padding = 2;
+              format-disconnected-background = "\${colors.background}";
+              format-disconnected-foreground = "\${colors.foreground-dim}";
+              label-disconnected =
+                if interface-type == "wireless" then
+                  (iconText nerdfonts.md.wifi_off)
+                else
+                  (iconText nerdfonts.md.network_off);
 
-            format-packetloss = "<animation-packetloss> <label-packetloss>";
-            format-packetloss-padding = 2;
-            format-packetloss-background = "\${colors.background}";
-            format-packetloss-foreground = "\${colors.foreground-dim}";
+              format-packetloss = "<animation-packetloss> <label-packetloss>";
+              format-packetloss-padding = 2;
+              format-packetloss-background = "\${colors.background}";
+              format-packetloss-foreground = "\${colors.foreground-dim}";
 
-            ramp-signal-0 = iconText nerdfonts.md.wifi_strength_1;
-            ramp-signal-1 = iconText nerdfonts.md.wifi_strength_2;
-            ramp-signal-2 = iconText nerdfonts.md.wifi_strength_3;
-            ramp-signal-3 = iconText nerdfonts.md.wifi_strength_4;
-          } // settings))));
+              ramp-signal-0 = iconText nerdfonts.md.wifi_strength_1;
+              ramp-signal-1 = iconText nerdfonts.md.wifi_strength_2;
+              ramp-signal-2 = iconText nerdfonts.md.wifi_strength_3;
+              ramp-signal-3 = iconText nerdfonts.md.wifi_strength_4;
+            } // settings))));
 
       extraConfig = ''
         include-directory = ${config.xdg.configHome}/polybar/polybar.d
       '';
 
-      script = let
-        bars = [ "top" ]; # TODO use from cfg
-        cmds = forEach bars (bar: "polybar ${bar} &");
-      in ''
-        for m in $(polybar --list-monitors | cut -d: -f1); do
-          MONITOR=$m ${concatStringsSep "\n" cmds}
-        done
-      '';
+      script =
+        let
+          bars = [ "top" ]; # TODO use from cfg
+          cmds = forEach bars (bar: "polybar ${bar} &");
+        in
+        ''
+          for m in $(polybar --list-monitors | cut -d: -f1); do
+            MONITOR=$m ${concatStringsSep "\n" cmds}
+          done
+        '';
     };
 
     # HACK: setup PATH for scripts
@@ -819,9 +963,9 @@ in {
           "${config.home.homeDirectory}/.dotfiles/local"
         ]
       }";
-    systemd.user.services.polybar.Install.WantedBy =
-      [ "graphical-session.target" ];
-    systemd.user.services.polybar.Unit.After = [ "graphical-session.target" ];
+    # systemd.user.services.polybar.Install.WantedBy =
+    #   [ "graphical-session.target" ];
+    # systemd.user.services.polybar.Unit.After = [ "graphical-session.target" ];
 
     # ensure polybar.d exists....
     home.activation.polybarConfigDir = lib.hm.dag.entryAfter [ "writeBoundary" ] ''

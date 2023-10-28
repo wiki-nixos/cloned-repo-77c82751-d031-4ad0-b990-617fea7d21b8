@@ -35,13 +35,20 @@
   ];
 
   my.deadd.enable = true;
-  modules.polybar.monitor = "eDP-1";
-  modules.polybar.networks = [
-    {
-      interface = "wlp170s0";
-      interface-type = "wireless";
-    }
-  ];
+  modules.polybar = {
+    monitor = "eDP-1";
+    battery = {
+      enable = true;
+      battery = "BAT1";
+      adapter = "ACAD";
+    };
+    networks = [
+      {
+        interface = "wlp170s0";
+        interface-type = "wireless";
+      }
+    ];
+  };
   modules.spellcheck.enable = true;
   modules.desktop.browsers = {
     default = "${lib.getExe config.programs.google-chrome.package} '--profile-directory=Default'";
@@ -49,7 +56,7 @@
   };
   services.picom.enable = true;
   services.polybar.enable = true;
-  services.polybar.settings = {};
+  services.polybar.settings = { };
   xsession.windowManager.i3.enable = true;
   xsession.windowManager.i3.config.terminal = "kitty";
 
